@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import load_p300_data
 import plot_p300_erps
 
+
 def erp_by_subject(subject: int):
     eeg_time, eeg_data, rowcol_id, is_target = load_p300_data.load_training_eeg(subject, 'P300Data/')
     event_sample, is_target_event = plot_p300_erps.get_events(rowcol_id, is_target)
@@ -19,7 +20,12 @@ def erp_by_subject(subject: int):
     target_std = np.std(target_epochs, axis=0) / np.sqrt(len(target_epochs))
     nontarget_std = np.std(nontarget_epochs, axis=0) / np.sqrt(len(nontarget_epochs))
 
-    return target_erp, nontarget_erp, target_std, nontarget_std, erp_times
+    
+    #calculate the pooled standard deviation for later use
+    size_target = np.shape(target_epochs)[0]
+    size_nontarget = np.shape(nontarget_epochs)[0]
+    
+    return target_erp, nontarget_erp, target_std, nontarget_std, erp_times, target_epochs, nontarget_epochs
 
 
 def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, subject=3):
@@ -96,3 +102,43 @@ def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp
 
     # save image
     plt.savefig(f'P300_S{subject}_channel_plots.png')  # save as image
+    
+
+
+def bootstrapERP(EEGdata, size=None):  # Steps 1-2
+    """ Calculate bootstrap ERP from data (array type)"""
+    ntrials = len(EEGdata)             # Get the number of trials
+    if size == None:                   # Unless the size is specified,
+        size = ntrials                 # ... choose ntrials
+    i = np.random.randint(ntrials, size=size)    # ... draw random trials,
+    EEG0 = EEGdata[i]                  # ... create resampled EEG,
+    return EEG0.mean(0)                # ... return resampled ERP.
+                                       # Step 3: Repeat 3000 times 
+
+def bootstrapStat(target_epochs, nontarget_epochs):
+    recombined_eeg = np.vstack((target_epochs, nontarget_epochs))
+    
+    mean_target = bootstrapERP(recombined_eeg, size=len(target_epochs))
+    mean_nontarget = bootstrapERP(recombined_eeg, size=len((nontarget_epochs)))
+    mean_difference = mean_target - mean_nontarget
+    return abs(mean_difference)
+
+def bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs):
+    bootstrapped_diffs = np.array([bootstrapStat(target_epochs, nontarget_epochs) for _ in range(3000)])
+    real_diffs = abs(target_erp - nontarget_erp)
+    
+    
+    
+    num_bootstrappings, num_times, num_channels = np.shape(bootstrapped_diffs)
+    
+    p_values = np.zeros([num_times, num_channels])
+    
+    for time_index in range(num_times):
+        for channel_index in range(num_channels):
+            bootstrapped_trial = bootstrapped_diffs[:, time_index, channel_index]
+            sorted_trial = np.sort(bootstrapped_trial)
+            p_values[time_index, channel_index] = np.searchsorted(sorted_trial, real_diffs[time_index, channel_index]) / num_bootstrappings
+    sorted_bootstrapped_diffs = np.sort(bootstrapped_diffs, axis=0)
+    
+    return p_values
+    
