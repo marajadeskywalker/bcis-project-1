@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 
 import load_p300_data
 import plot_p300_erps
+from mne.stats import fdr_correction
 
 
 def erp_by_subject(subject: int):
@@ -26,7 +27,6 @@ def erp_by_subject(subject: int):
     size_nontarget = np.shape(nontarget_epochs)[0]
     
     return target_erp, nontarget_erp, target_std, nontarget_std, erp_times, target_epochs, nontarget_epochs
-
 
 def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, subject=3):
     """
@@ -140,5 +140,107 @@ def bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs):
             p_values[time_index, channel_index] = np.searchsorted(sorted_trial, real_diffs[time_index, channel_index]) / num_bootstrappings
     sorted_bootstrapped_diffs = np.sort(bootstrapped_diffs, axis=0)
     
-    return p_values
+    return 1-p_values
+
+def plot_fdr_corrected_ps(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, p_values, subject=3):
     
+
+    # transpose the erp data to plot, matches average at that sample time to the size of the time array
+    target_erp_transpose = np.transpose(target_erp)
+    nontarget_erp_transpose = np.transpose(nontarget_erp)
+
+    # get channel count
+    channel_count = len(target_erp_transpose)  # same as if nontargets were used
+
+    # plot ERPs for events for each channel
+    figure, channel_plots = plt.subplots(math.ceil(channel_count / 3), 3, figsize=(10, 6))
+    
+    for i in range(3 - channel_count % 3):
+        channel_plots[-1][2 - i].remove()  # only 8 channels, 9th plot unnecessary
+    
+    rejection_array = np.zeros([channel_count, len(target_erp)])
+    #print(np.shape(rejection_array))
+    for channel_index in range(channel_count):
+
+        row_index, column_index = divmod(channel_index, 3)  # wrap around to column 0 for every 3 plots
+        channel_plot = channel_plots[row_index][column_index]
+
+        # plot dotted lines for time 0 and 0 voltage
+        channel_plot.axvline(0, color='black', linestyle='dotted')
+        channel_plot.axhline(0, color='black', linestyle='dotted')
+
+        # plot target and nontarget erp data in the subplot
+        target_channel_data = target_erp_transpose[channel_index]
+        target_95 = target_std.T[channel_index] * 2
+        target_handle, = channel_plot.plot(erp_times, target_channel_data)
+        channel_plot.fill_between(erp_times, target_channel_data + target_95,
+                                  target_channel_data - target_95, alpha=0.2)
+        nontarget_channel_data = nontarget_erp_transpose[channel_index]
+        nontarget_95 = nontarget_std.T[channel_index] * 2
+        nontarget_handle, = channel_plot.plot(erp_times, nontarget_erp_transpose[channel_index])
+        channel_plot.fill_between(erp_times, nontarget_channel_data + nontarget_95,
+                                  nontarget_channel_data - target_95, alpha=0.2)
+
+        
+        rejections, corrected_pvals = fdr_correction(p_values[:,channel_index])
+        
+        rejection_array[channel_index] = rejections
+        
+        dot_times = np.array(erp_times)[rejections]
+        channel_plot.scatter(dot_times, np.zeros(len(dot_times)), c="#000000")
+
+
+        # workaround for legend to only display each entry once
+        if channel_index == 0:
+            target_handle.set_label('Target')
+            nontarget_handle.set_label('Nontarget')
+
+        # label each plot's axes and channel number
+        channel_plot.set_title(f'Channel {channel_index}')
+        channel_plot.set_xlabel('time from flash onset (s)')
+        channel_plot.set_ylabel('Voltage (μV)')
+
+    # formatting
+    figure.suptitle(f'P300 Speller S{subject} Training ERPs')
+    figure.legend(loc='lower right', fontsize='xx-large')  # legend in space of nonexistent plot 9
+    figure.tight_layout()  # stop axis labels overlapping titles
+
+    # save image
+    plt.savefig(f'P300_S{subject}_channel_plots.png')  # save as image
+    
+    return rejection_array
+
+def evaluate_across_subjects():
+    rejection_array = []
+    erps_array = []
+    for subject_index in range(3, 11):
+        target_erp, nontarget_erp, target_std, nontarget_std, erp_times, target_epochs, nontarget_epochs = erp_by_subject(subject_index)
+        p_values = bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs)
+        rejection_array.append(plot_fdr_corrected_ps(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, p_values, subject_index))
+        erps_array.append(erp_times)
+    rejection_array = np.array(rejection_array)
+    erps_array = np.array(erps_array)
+    num_rejections_by_channel = np.sum(rejection_array, axis=1)
+    
+    
+    # get channel count
+    channel_count = len(rejection_array[0])
+    
+    figure, channel_plots = plt.subplots(math.ceil(channel_count / 3), 3, figsize=(10, 6))
+    for i in range(3 - channel_count % 3):
+        channel_plots[-1][2 - i].remove()  # only 8 channels, 9th plot unnecessary
+        
+    for channel_index in range(channel_count):
+        row_index, column_index = divmod(channel_index, 3)  # wrap around to column 0 for every 3 plots
+        channel_plot = channel_plots[row_index][column_index]
+        channel_rejections = num_rejections_by_channel[channel_index]
+        channel_erps = erps_array[channel_index]
+        channel_plot.plot(channel_erps,channel_rejections)
+        
+        channel_plot.set_title(f'Channel {channel_index}')
+        channel_plot.set_xlabel('time from (s)')
+        channel_plot.set_ylabel('# subjects significant')
+    
+    figure.suptitle('Significant Subjects by Channel')
+    figure.tight_layout()  # stop axis labels overlapping titles
+    plt.savefig('P300_Significant_Subjects.png')  # save as image
