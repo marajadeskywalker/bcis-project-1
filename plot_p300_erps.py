@@ -85,26 +85,28 @@ def epoch_data(eeg_time, eeg_data, event_sample, epoch_start_time=-0.5, epoch_en
         
     """
     
-    # find size of each dimension for eeg_epochs 
+    # find size of each dimension for eeg_epochs
     # number of epochs (dimension 0)
     epoch_count = len(event_sample)
+    # print(eeg_data.shape)
     # samples per epoch (dimension 1)
     samples_per_second = 1/(eeg_time[1]-eeg_time[0])
     seconds_per_epoch = epoch_end_time - epoch_start_time
     samples_per_epoch = int(samples_per_second*seconds_per_epoch) # cast as integer for dimensioning
     # number of channels (dimension 2)
     channel_count = len(eeg_data)
-    
+
+    start_offset = int(epoch_start_time*samples_per_second)
+    end_offset = int(epoch_end_time*samples_per_second)
+
+
+    #print(type(event_window_start))
     # declare array to contain epoched data
-    eeg_epochs = np.zeros((epoch_count, samples_per_epoch, channel_count))
-    # load epochs into array
-    for epoch_index in range(epoch_count): 
-        for channel_index in range(channel_count):
-            start_offset = int(event_sample[epoch_index]+(epoch_start_time*samples_per_second)) # samples to go back before event
-            for sample_index in range(samples_per_epoch):
-                raw_sample = sample_index + start_offset # sample number at the start of the epoch (not event)
-                eeg_epochs[epoch_index, sample_index, channel_index] = eeg_data[channel_index, raw_sample]
-    
+    eeg_epochs = []
+    for event in event_sample:
+        eeg_epochs.append(eeg_data[:,event+start_offset:event+end_offset].T)
+    eeg_epochs = np.array(eeg_epochs)
+    # print(eeg_epochs.shape)
     # declare array to contain times of event-related potentials (ERPs)
     erp_times = []
     # load in times in seconds for each sample in the epoch 
