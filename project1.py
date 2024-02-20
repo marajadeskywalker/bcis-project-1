@@ -1,33 +1,69 @@
+"""
+project1.py
+Contains the functions for Project 1, including calculating the target and nontarget ERP values of a specific subject,
+plotting those values by channel for a specific subject, calculating FDR-corrected and boostrapped p-values for the difference
+between target and nontarget ERPs, and evaluating the prior functions across all subjects and plotting the number of subjects statistically significant
+at each point in time on each channel. 
+Written by Lexi Reinsborough and Ashley Heath
+"""
+#%%
+#import packages
 import math
-
 import numpy as np
 from matplotlib import pyplot as plt
-
 import load_p300_data
 import plot_p300_erps
 from mne.stats import fdr_correction
 
-
+#%%
 def erp_by_subject(subject: int):
+    """
+    Description
+    -----------
+    Caculates the target and nontarget ERP values of a specific subject, and the standard deviation for each of those.
+
+    Parameters
+    ----------
+    subject : int
+        The subject (participant) in the P300 dataset whose responses will be used as input.
+        
+    Returns
+    -------
+    target_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Contains the mean values for each channel and sample position in all epochs where the epoch corresponds to a target event.
+    nontarget_erp: PxC array of floats, where P is the numbero f samples in each epoch, and C is the number of channels
+        Contains the mean values for each channel and sample position where the epoch does not correspond to a target event.
+    target_std : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Contains the standard deviation of the mean values for each channel and sample position in all epochs corresponding to a target event.
+    nontarget_std : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Contains the standard deviation of the mean values for each channel and sample position in all epochs not corresponding to a target event.
+    erp_times : Px1 array of floats, where P is the number of samples in each epoch.
+        Contains the list of times (in seconds) at which the data was sampled.
+    target_epochs : ExPxC array of floats, where E is the number of epochs corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch corresponds to a target event.
+    nontarget_epochs : ExPxC array of floats, where E is the number of epochs not corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch does not correspond to a target event.
+    """
+    #load and epoch the data using functions from previous labs
     eeg_time, eeg_data, rowcol_id, is_target = load_p300_data.load_training_eeg(subject, 'P300Data/')
     event_sample, is_target_event = plot_p300_erps.get_events(rowcol_id, is_target)
     eeg_epochs, erp_times = plot_p300_erps.epoch_data(eeg_time, eeg_data, event_sample)
+    
+    #filter the data into target and nontarget epochs
     target_epochs = eeg_epochs[is_target_event]  # (target_count, samples_per_epoch, channel_count)
     nontarget_epochs = eeg_epochs[~is_target_event]  # (nontarget_count, samples_per_epoch, channel_count)
 
     # mean response on each channel for each event
     target_erp = np.mean(target_epochs, axis=0)
     nontarget_erp = np.mean(nontarget_epochs, axis=0)
+    
+    # get standard deviation of those means
     target_std = np.std(target_epochs, axis=0) / np.sqrt(len(target_epochs))
     nontarget_std = np.std(nontarget_epochs, axis=0) / np.sqrt(len(nontarget_epochs))
-
-    
-    #calculate the pooled standard deviation for later use
-    size_target = np.shape(target_epochs)[0]
-    size_nontarget = np.shape(nontarget_epochs)[0]
     
     return target_erp, nontarget_erp, target_std, nontarget_std, erp_times, target_epochs, nontarget_epochs
 
+#%%
 def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, subject=3):
     """
     Description
@@ -40,11 +76,11 @@ def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp
         Mean values for each channel and sample position in all epochs where the epoch corresponds to a target event.
     nontarget_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
         Mean values where the epoch doesn't correspond to a target event.
-     erp_times : Px1 array of floats, where P is the number of samples in each epoch
+    erp_times : Px1 array of floats, where P is the number of samples in each epoch
         The time offsets at which any given sample in eeg_epochs occurred relative to its corresponding event onset, along dimension 1.
     subject : int, optional
         index of the subject which the data comes from. used only for labeling plot and filename of output. The default is 3.
-
+        
     Returns
     -------
     None.
@@ -104,9 +140,25 @@ def plot_erp_intervals(target_erp, nontarget_erp, target_std, nontarget_std, erp
     plt.savefig(f'P300_S{subject}_channel_plots.png')  # save as image
     
 
-
+#%%
 def bootstrapERP(EEGdata, size=None):  # Steps 1-2
-    """ Calculate bootstrap ERP from data (array type)"""
+    """
+    Description
+    -----------
+    Helper method for the bootstrapping process which resamples the data and draws a new mean from this sample. (Corresponds to ONE mean, and will be called multiple times.)
+    
+    Parameters
+    ----------
+    EEGdata : ExPxC array of floats, where E is the number of epochs being analyzed, P is the number of samples in each epoch and C is the number of channels.
+        The raw (not mean) EEG data which the function will randomly sample in order to create new means.
+    size: int, optional
+        The number of trials which will be used to make up the new sample before averaging. By default, None, and the function uses samples equal to the number of epochs.
+    
+    Returns
+    -------
+    EEG0.mean(0): float
+        the new ERP mean calculated from the resampled data.
+    """
     ntrials = len(EEGdata)             # Get the number of trials
     if size == None:                   # Unless the size is specified,
         size = ntrials                 # ... choose ntrials
@@ -116,14 +168,57 @@ def bootstrapERP(EEGdata, size=None):  # Steps 1-2
                                        # Step 3: Repeat 3000 times 
 
 def bootstrapStat(target_epochs, nontarget_epochs):
+    """
+    Description
+    -----------
+    Helper method for the bootstrapping process which recombines target and nontarget epochs, performs the resampling process from bootstrapERP twice - once
+    with size equal to the length of target epochs, and with size equal to the length of nontarget epochs. Then calculates the absolute value of the difference
+    between these two values.
+    Parameters
+    ----------
+    target_epochs : ExPxC array of floats, where E is the number of epochs corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch corresponds to a target event.
+    nnontarget_epochs : ExPxC array of floats, where E is the number of epochs not corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch does not correspond to a target event.
+    Returns
+    -------
+    abs(mean_difference): float
+        The absolute value of the difference between the mean ERP of the target epochs, and the mean ERP of the nontarget epochs.
+    """
+    #merge the two sets of epochs into a single distribution
     recombined_eeg = np.vstack((target_epochs, nontarget_epochs))
     
+    #resample and calculte the mean for target and nontarget using the helper method, and then get the difference
     mean_target = bootstrapERP(recombined_eeg, size=len(target_epochs))
     mean_nontarget = bootstrapERP(recombined_eeg, size=len((nontarget_epochs)))
     mean_difference = mean_target - mean_nontarget
     return abs(mean_difference)
 
 def bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs):
+    """
+    Description
+    -----------
+    Main bootstrapping method which runs the previous helper methods 3000 times to amass 3000 means of the difference between target and nontarget epochs.
+    Then calculates what proportion of these bootstrapped values each real difference is larger than, and returns 1-this difference, the p-value
+
+    Parameters
+    ----------
+    target_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Mean values for each channel and sample position in all epochs where the epoch corresponds to a target event.
+    nontarget_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Mean values where the epoch doesn't correspond to a target event.
+    target_epochs : ExPxC array of floats, where E is the number of epochs corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch corresponds to a target event.
+    nontarget_epochs : ExPxC array of floats, where E is the number of epochs not corresponding to a target event, P is the number of samples in each epoch and C is the number of channels.
+        Contains the raw EEG data (not the mean) for each channel and sample position for all epochs where the epoch does not correspond to a target event.
+    Returns
+    -------
+    1-p_values : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Returns the true p values by channel and time. Each value is the probability of witnessing results as extreme as the actual values assuming the null hypothesis is true and there is no difference between ERPs for target
+        and nontarget ERPs.
+
+    """
+    #calculate the 3000 individual bootstrapped means and real difference between target and nontarget ERPs
     bootstrapped_diffs = np.array([bootstrapStat(target_epochs, nontarget_epochs) for _ in range(3000)])
     real_diffs = abs(target_erp - nontarget_erp)
     
@@ -133,17 +228,47 @@ def bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs):
     
     p_values = np.zeros([num_times, num_channels])
     
+    #calculate the proportion of the bootstrapped means which each real value is larger than.
     for time_index in range(num_times):
         for channel_index in range(num_channels):
             bootstrapped_trial = bootstrapped_diffs[:, time_index, channel_index]
             sorted_trial = np.sort(bootstrapped_trial)
             p_values[time_index, channel_index] = np.searchsorted(sorted_trial, real_diffs[time_index, channel_index]) / num_bootstrappings
-    sorted_bootstrapped_diffs = np.sort(bootstrapped_diffs, axis=0)
     
+    #the value we have so far is the proportion of bootstrapped means which the real value is larger than. We want the opposite of this, the probability that the results could be random, so we subtract from 1.
     return 1-p_values
 
 def plot_fdr_corrected_ps(target_erp, nontarget_erp, target_std, nontarget_std, erp_times, p_values, subject=3):
-    
+    """
+    Description
+    -----------
+    Function to calculate and plot the FDR corrected p-values for a specific subject using the provided ERPs and p-values.
+
+    Parameters
+    ----------
+    target_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Mean values for each channel and sample position in all epochs where the epoch corresponds to a target event.
+    nontarget_erp : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Mean values where the epoch doesn't correspond to a target event.
+    target_std : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Contains the standard deviation of the mean values for each channel and sample position in all epochs corresponding to a target event.
+    nontarget_std : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        Contains the standard deviation of the mean values for each channel and sample position in all epochs not corresponding to a target event.
+    erp_times : Px1 array of floats, where P is the number of samples in each epoch
+        The time offsets at which any given sample in eeg_epochs occurred relative to its corresponding event onset, along dimension 1.
+    p_values : PxC array of floats, where P is the number of samples in each epoch, and C is the number of channels
+        The p-values of the difference between target and nontarget ERPs at each channel at each time point. Each value is the probability of 
+        witnessing results as at least as extreme as the actual data compared to the distribution that would be present if the null hypothesis was true.
+    subject : int, optional
+        index of the subject which the data comes from. used only for labeling plot and filename of output. The default is 3.
+
+    Returns
+    -------
+    rejection_array : PxC array of booleans, where P is the number of samples in each epoch, and C is the number of channels.
+        Each boolean value in the array is True if the p-value at that time point and channel would lead to rejecting the null hypothesis
+        at the 95% significance level, or False otherwise.
+
+    """
 
     # transpose the erp data to plot, matches average at that sample time to the size of the time array
     target_erp_transpose = np.transpose(target_erp)
@@ -210,9 +335,26 @@ def plot_fdr_corrected_ps(target_erp, nontarget_erp, target_std, nontarget_std, 
     
     return rejection_array
 
+#%%
 def evaluate_across_subjects():
+    """
+    Description
+    -----------
+    Function which calculates the bootstrapped p-values for each subject in the P300 dataset, and then uses these values to 
+    create a graph of how many subjects in the P300 dataset are statistically significant at each point.
+    
+    Parameters
+    ----------
+    
+    Returns
+    -------
+    None.
+
+    """
     rejection_array = []
     erps_array = []
+    
+    #Run the bootstrapping functions on each individual subject in the P300 dataset
     for subject_index in range(3, 11):
         target_erp, nontarget_erp, target_std, nontarget_std, erp_times, target_epochs, nontarget_epochs = erp_by_subject(subject_index)
         p_values = bootstrap(target_erp, nontarget_erp, target_epochs, nontarget_epochs)
@@ -220,16 +362,21 @@ def evaluate_across_subjects():
         erps_array.append(erp_times)
     rejection_array = np.array(rejection_array)
     erps_array = np.array(erps_array)
+    
+    #Calculate the number of subjects for which the null hypothesis would be rejected at the 95% significance level
+    #for each time point on each channel
     num_rejections_by_channel = np.sum(rejection_array, axis=1)
     
     
     # get channel count
     channel_count = len(rejection_array[0])
     
+    #set up plots
     figure, channel_plots = plt.subplots(math.ceil(channel_count / 3), 3, figsize=(10, 6))
     for i in range(3 - channel_count % 3):
         channel_plots[-1][2 - i].remove()  # only 8 channels, 9th plot unnecessary
         
+    #plot the results for each channel
     for channel_index in range(channel_count):
         row_index, column_index = divmod(channel_index, 3)  # wrap around to column 0 for every 3 plots
         channel_plot = channel_plots[row_index][column_index]
@@ -237,6 +384,7 @@ def evaluate_across_subjects():
         channel_erps = erps_array[channel_index]
         channel_plot.plot(channel_erps,channel_rejections)
         
+        #set up labels 
         channel_plot.set_title(f'Channel {channel_index}')
         channel_plot.set_xlabel('time from (s)')
         channel_plot.set_ylabel('# subjects significant')
