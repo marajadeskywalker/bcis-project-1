@@ -15,7 +15,7 @@ import mne
 
 
 # Declare main function
-def plot_topo(channel_names=[], channel_data=[],title='',cbar_label='Voltage (uV)',montage_name='biosemi64'):
+def plot_topo(channel_names=[], channel_data=[],title='',cbar_label='Voltage (uV)',montage_name='biosemi64', ax=None):
     """
     Plots a topomap (colored brain) of the specified channels and values.
 
@@ -64,10 +64,10 @@ def plot_topo(channel_names=[], channel_data=[],title='',cbar_label='Voltage (uV
     # Clear current axes
     plt.cla()    
     # Plot topomap on current axes    
-    im,_ = mne.viz.plot_topomap(fake_evoked.data[:, 0], fake_evoked.info,show=True)
+    im,_ = mne.viz.plot_topomap(fake_evoked.data[:, 0], fake_evoked.info, show=True, axes=ax)
     # Annotate plot
     plt.title(title)
-    cbar = plt.colorbar(im,label=cbar_label)
+    cbar = plt.colorbar(im,label=cbar_label, shrink=.7)
     
     # return image and colorbar objects
     return im,cbar

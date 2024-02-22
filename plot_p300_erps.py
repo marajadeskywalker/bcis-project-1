@@ -113,7 +113,7 @@ def epoch_data(eeg_time, eeg_data, event_sample, epoch_start_time=-0.5, epoch_en
     for time_index in range(int(samples_per_epoch)):
         erp_times.append(epoch_start_time+(time_index*(1/samples_per_second)))
     
-    return eeg_epochs, erp_times
+    return eeg_epochs, np.array(erp_times)
 
 #%% Part 4: Calculate the ERPs
 
